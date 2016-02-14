@@ -1,0 +1,120 @@
+create table
+create index
+do psql load of nyse data and see if index is populated
+run queries in phoenix
+show data in phoenix and hbase
+load table in phoenix to do joins
+perform join and show explain plan
+map phoenix table to an existing hbase table
+
+--------------------------------------
+Do these actions as the hbase user
+
+create the table in Phoenix:
+CREATE TABLE IF NOT EXISTS stock_close ( tdate VARCHAR, s.name VARCHAR, symbol VARCHAR, s.day_open DECIMAL (8,2), s.day_high DECIMAL (8,2), s.day_low DECIMAL (8,2), s.day_close DECIMAL (8,2)  CONSTRAINT stock_pk PRIMARY KEY (tdate, symbol));
+
+
+create the index in Phoenix:
+CREATE INDEX stock_close_idx ON stock_close (s.name);
+
+
+show table and index in Phoenix:
+!tables
+!describe STOCK_CLOSE
+!describe STOCK_CLOSE_IDX
+
+
+show table and index in hbase shell:
+list
+describe 'STOCK_CLOSE'
+describe 'STOCK_CLOSE_IDX'
+
+
+bulk load using psql.py
+bin/psql.py -t STOCK_CLOSE localhost:2181:/hbase-unsecure /home/hbase/NYSE-2015-02-04.csv
+
+
+show row counts for data table and index in phoenix
+select count(1) from STOCK_CLOSE;
+select count(1) from STOCK_CLOSE_IDX;
+
+
+show first 10 rows os data table and index in phoenix
+select * from STOCK_CLOSE limit 10;
+select * from STOCK_CLOSE_IDX limit 10;
+
+
+show first 10 rows os data table and index in hbase shell
+scan 'STOCK_CLOSE', {LIMIT => 10}
+scan 'STOCK_CLOSE_IDX', {LIMIT => 10}
+
+
+Go back to Phoenix shell and run a query using the index:
+explain select name from stock_close where s.name>='Yu' AND s.name<='Zep';
+select name from stock_close where s.name>='Yu' AND s.name<='Zep';
+
+explain select * from stock_close where s.name>='Yu' AND s.name<='Zep';
+select * from stock_close where s.name>='Yu' AND s.name<='Zep';
+
+
+Perform a join example:
+
+From the Phoenix shell:
+Could create table with symbol and name.  Do query to join tables to get name from symbol.
+CREATE TABLE IF NOT EXISTS issue_ref ( name VARCHAR, symbol VARCHAR CONSTRAINT issue_pk PRIMARY KEY (name));
+
+
+Run the psql loader:
+bin/psql.py -t ISSUE_REF localhost:2181:/hbase-unsecure /home/hbase/NYSE-issue-ref.csv
+
+
+From the Phoenix shell:
+select * from issue_ref limit 10;
+
+
+select r.name, s.symbol, s.day_close from ISSUE_REF as R INNER JOIN STOCK_CLOSE as s on r.symbol = s.symbol WHERE s.symbol='ZTS';
+
+
+explain select r.name, s.symbol, s.day_close from ISSUE_REF as R INNER JOIN STOCK_CLOSE as s on r.symbol = s.symbol WHERE s.symbol='ZTS';
+
+
+
+Mapping existing HBase table to Phoenix
+
+In hbase shell
+create 't1', {NAME=>'f1', VERSIONS => 3}
+put 't1', 'r1', 'f1:col1', 'val1'
+put 't1', 'r2', 'f1:col2', 'val2'
+
+
+In Phoenix CLI
+create table "t1" (myPK VARCHAR PRIMARY KEY, "f1"."col1" VARCHAR);
+
+select * from "t1";
+
+
+-----------------------------------------------------
+
+
+
+TESTING INDEX CREATON AT BULK LOAD
+-------------------------------------
+CREATE TABLE IF NOT EXISTS index_test_st ( tdate VARCHAR, s.name VARCHAR, symbol VARCHAR, s.day_open DECIMAL (8,2), s.day_high DECIMAL (8,2), s.day_low DECIMAL (8,2), s.day_close DECIMAL (8,2)  CONSTRAINT it_pk PRIMARY KEY (tdate, symbol));
+
+CREATE INDEX index_test_idx ON index_test_st (s.name);
+
+HADOOP_CLASSPATH=$(hbase mapredcp):/usr/hdp/current/hbase-client/conf hadoop jar phoenix-client.jar org.apache.phoenix.mapreduce.CsvBulkLoadTool --table INDEX_TEST_ST --zookeeper localhost:2181:/hbase-unsecure --input /test-data/NYSE-2015-02-04.csv
+
+0: jdbc:phoenix:localhost:2181:/hbase-unsecur> explain select name from index_test_st where name='A.O. Smith';
++------------+
+|    PLAN    |
++------------+
+| CLIENT PARALLEL 1-WAY RANGE SCAN OVER INDEX_TEST2_IDX ['A.O. Smith'] |
++------------+
+1 row selected (0.114 seconds)
+
+
+
+
+
+
